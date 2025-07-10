@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📸 Classic Photobooth</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="photobooth-container">
+        <h1 class="title">📸 Classic Photobooth</h1>
+        
+        <div class="main-content">
+            <div class="camera-section">
+                <div class="video-container">
+                    <video id="video" autoplay muted playsinline></video>
+                    <div class="countdown-overlay" id="countdownOverlay">3</div>
+                </div>
+                
+                <button class="start-btn" id="startBtn">Start Camera</button>
+                
+                <div class="controls" id="controls" style="display: none;">
+                    <div class="filter-section">
+                        <button class="filter-btn active" data-filter="none">Original</button>
+                        <button class="filter-btn" data-filter="vintage">Vintage</button>
+                        <button class="filter-btn" data-filter="bw">B&W</button>
+                        <button class="filter-btn" data-filter="warm">Warm</button>
+                        <button class="filter-btn" data-filter="cool">Cool</button>
+                        <button class="filter-btn" data-filter="dramatic">Dramatic</button>
+                    </div>
+                    
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    
+                    <button class="shoot-btn" id="shootBtn">🎬 Start Photo Session</button>
+                </div>
+            </div>
+
+            <div class="photo-strip-section">
+                <div class="photo-strip-container">
+                    <div class="photo-strip-header">📸 Photo Strip</div>
+                    <div class="photo-strip" id="photoStrip">
+                        <div class="photo-slot" id="slot1">
+                            <span>Photo 1</span>
+                            <div class="photo-number">1</div>
+                        </div>
+                        <div class="photo-slot" id="slot2">
+                            <span>Photo 2</span>
+                            <div class="photo-number">2</div>
+                        </div>
+                        <div class="photo-slot" id="slot3">
+                            <span>Photo 3</span>
+                            <div class="photo-number">3</div>
+                        </div>
+                    </div>
+                    
+                    <div class="strip-actions">
+                        <button class="action-btn download-btn" id="downloadBtn" disabled>💾 Download Strip</button>
+                        <button class="action-btn reset-btn" id="resetBtn">🔄 New Strip</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="error-message" id="errorMessage"></div>
+    </div>
+
+    <div class="flash-effect" id="flashEffect"></div>
+
+    <script>
+        // Get DOM elements
+        const video = document.getElementById('video');
+        const startBtn = document.getElementById('startBtn');
+        const shootBtn = document.getElementById('shootBtn');
+        const controls = document.getElementById('controls');
+        const countdownOverlay = document.getElementById('countdownOverlay');
+        const photoStrip = document.getElementById('photoStrip');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const flashEffect = document.getElementById('flashEffect');
+        const errorMessage = document.getElementById('errorMessage');
+        const progressFill = document.getElementById('progressFill');
+
+        // State variables
+        let currentFilter = 'none';
+        let stream = null;
+        let photoCount = 0;
+        let isCapturing = false;
+        let capturedPhotos = [];
+
+        // Start camera
+        startBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                
+                video.srcObject = stream;
+                
+                startBtn.style.display = 'none';
+                controls.style.display = 'block';
+                errorMessage.textContent = '';
+                
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                errorMessage.textContent = 'Unable to access camera. Please ensure you have granted camera permissions.';
+            }
+        });
+
+        // Filter button event listeners
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (isCapturing) return; // Prevent filter changes during capture
+                
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                currentFilter = btn.dataset.filter;
+                applyFilter();
+            });
+        });
+
+        // Apply filter to video
+        function applyFilter() {
+            if (currentFilter === 'none') {
+                video.className = '';
+            } else {
+                video.className = `filter-${currentFilter}`;
+            }
+        }
+
+        // Start photo session
+        shootBtn.addEventListener('click', async () => {
+            if (isCapturing) return;
+            
+            isCapturing = true;
+            shootBtn.disabled = true;
+            shootBtn.textContent = '📸 Taking Photos...';
+            
+            // Reset everything
+            photoCount = 0;
+            capturedPhotos = [];
+            resetPhotoStrip();
+            
+            // Take 3 photos with countdown
+            for (let i = 0; i < 3; i++) {
+                await takePhotoWithCountdown(i + 1);
+                if (i < 2) {
+                    await sleep(1000); // Wait 1 second between photos
+                }
+            }
+            
+            // Enable download and reset capture state
+            downloadBtn.disabled = false;
+            isCapturing = false;
+            shootBtn.disabled = false;
+            shootBtn.textContent = '🎬 Start Photo Session';
+            progressFill.style.width = '100%';
+        });
+
+        // Take photo with countdown
+        async function takePhotoWithCountdown(photoNumber) {
+            // Show countdown
+            countdownOverlay.style.display = 'flex';
+            
+            for (let count = 3; count >= 1; count--) {
+                countdownOverlay.textContent = count;
+                await sleep(1000);
+            }
+            
+            countdownOverlay.textContent = 'SMILE! 📸';
+            await sleep(500);
+            
+            // Take the photo
+            const photoData = capturePhoto();
+            capturedPhotos.push(photoData);
+            
+            // Update photo strip
+            updatePhotoStrip(photoNumber, photoData);
+            
+            // Update progress
+            progressFill.style.width = `${(photoNumber / 3) * 100}%`;
+            
+            // Flash effect
+            flashEffect.classList.add('active');
+            setTimeout(() => {
+                flashEffect.classList.remove('active');
+            }, 150);
+            
+            // Hide countdown
+            countdownOverlay.style.display = 'none';
+            
+            photoCount++;
+        }
+
+        // Capture photo function
+        function capturePhoto() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Draw video frame
+            ctx.drawImage(video, 0, 0);
+            
+            // Apply filter
+            if (currentFilter !== 'none') {
+                applyCanvasFilter(ctx, canvas, currentFilter);
+            }
+            
+            return canvas.toDataURL('image/jpeg', 0.9);
+        }
+
+        // Apply filter to canvas
+        function applyCanvasFilter(ctx, canvas, filter) {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            switch (filter) {
+                case 'bw':
+                    for (let i = 0; i < data.length; i += 4) {
+                        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                        data[i] = avg;
+                        data[i + 1] = avg;
+                        data[i + 2] = avg;
+                    }
+                    break;
+                case 'vintage':
+                    for (let i = 0; i < data.length; i += 4) {
+                        data[i] = Math.min(255, data[i] * 1.1);
+                        data[i + 1] = Math.min(255, data[i + 1] * 0.9);
+                        data[i + 2] = Math.min(255, data[i + 2] * 0.7);
+                    }
+                    break;
+                case 'warm':
+                    for (let i = 0; i < data.length; i += 4) {
+                        data[i] = Math.min(255, data[i] * 1.2);
+                        data[i + 1] = Math.min(255, data[i + 1] * 1.1);
+                        data[i + 2] = Math.min(255, data[i + 2] * 0.8);
+                    }
+                    break;
+                case 'cool':
+                    for (let i = 0; i < data.length; i += 4) {
+                        data[i] = Math.min(255, data[i] * 0.8);
+                        data[i + 1] = Math.min(255, data[i + 1] * 1.1);
+                        data[i + 2] = Math.min(255, data[i + 2] * 1.2);
+                    }
+                    break;
+                case 'dramatic':
+                    for (let i = 0; i < data.length; i += 4) {
+                        data[i] = Math.min(255, data[i] * 1.5);
+                        data[i + 1] = Math.min(255, data[i + 1] * 1.5);
+                        data[i + 2] = Math.min(255, data[i + 2] * 1.5);
+                    }
+                    break;
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        // Update photo strip display
+        function updatePhotoStrip(photoNumber, photoData) {
+            const slot = document.getElementById(`slot${photoNumber}`);
+            slot.innerHTML = `
+                <img src="${photoData}" alt="Photo ${photoNumber}">
+                <div class="photo-number">${photoNumber}</div>
+            `;
+            slot.classList.add('filled');
+        }
+
+        // Reset photo strip
+        function resetPhotoStrip() {
+            for (let i = 1; i <= 3; i++) {
+                const slot = document.getElementById(`slot${i}`);
+                slot.innerHTML = `
+                    <span>Photo ${i}</span>
+                    <div class="photo-number">${i}</div>
+                `;
+                slot.classList.remove('filled');
+            }
+            downloadBtn.disabled = true;
+            progressFill.style.width = '0%';
+        }
+
+        // Download photo strip
+        downloadBtn.addEventListener('click', () => {
+            if (capturedPhotos.length !== 3) return;
+            
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Set canvas size for photo strip (portrait orientation)
+            canvas.width = 400;
+            canvas.height = 600;
+            
+            // White background
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw header
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('📸 PHOTOBOOTH', canvas.width / 2, 40);
+            
+            // Draw date
+            ctx.font = '14px Arial';
+            ctx.fillText(new Date().toLocaleDateString(), canvas.width / 2, 65);
+            
+            // Draw photos
+            const photoWidth = 320;
+            const photoHeight = 160;
+            const photoX = (canvas.width - photoWidth) / 2;
+            let photoY = 90;
+            
+            capturedPhotos.forEach((photoData, index) => {
+                const img = new Image();
+                img.onload = () => {
+                    ctx.drawImage(img, photoX, photoY, photoWidth, photoHeight);
+                    
+                    // Draw photo border
+                    ctx.strokeStyle = '#ddd';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(photoX, photoY, photoWidth, photoHeight);
+                    
+                    photoY += photoHeight + 10;
+                    
+                    // Download when all photos are drawn
+                    if (index === capturedPhotos.length - 1) {
+                        const link = document.createElement('a');
+                        link.download = `photobooth_strip_${Date.now()}.png`;
+                        link.href = canvas.toDataURL();
+                        link.click();
+                    }
+                };
+                img.src = photoData;
+            });
+        });
+
+        // Reset button
+        resetBtn.addEventListener('click', () => {
+            resetPhotoStrip();
+            capturedPhotos = [];
+            photoCount = 0;
+        });
+
+        // Utility function for delays
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // Clean up when page is closed
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>
